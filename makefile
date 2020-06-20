@@ -8,13 +8,13 @@
 # make extcoff	= Convert ELF to AVR Extended COFF (for use with AVR Studio
 #                4.07 or greater).
 # make install	= Download the hex file to the device, using avrdude.  Please
-#                customize the information regarding the programmer and 
+#                customize the information regarding the programmer and
 #                avrdude settings below first!
 # make filename.s = Just compile filename.c into the assembler code only
 # To rebuild project do "make clean" then "make all".
 
 # Microcontroller Type
-MCU=attiny861
+MCU=atmega8
 
 # Target file name (without extension).
 TARGET = ps2kbd
@@ -40,6 +40,7 @@ SRC = $(TARGET).c
 # If there is more than one source file, append them above, or modify and
 # uncomment the following:
 #SRC += foo.c bar.c
+SRC += rs232.c
 
 # You can also wrap lines by appending a backslash to the end of the line:
 #SRC += baz.c \
@@ -54,12 +55,12 @@ SRC = $(TARGET).c
 # Even though the DOS/Win* filesystem matches both .s and .S the same,
 # it will preserve the spelling of the filenames, and gcc itself does
 # care about how the name is spelled on its command-line.
-ASRC = 
+ASRC =
 
 
 # List any extra directories to look for include files here.
 #     Each directory must be seperated by a space.
-EXTRAINCDIRS = 
+EXTRAINCDIRS =
 
 
 # Optional compiler flags.
@@ -93,7 +94,7 @@ CFLAGS += -std=gnu99
 #             for use in COFF files, additional information about filenames
 #             and function names needs to be present in the assembler source
 #             files -- see avr-libc docs [FIXME: not yet described there]
-ASFLAGS = -Wa,-adhlns=$(<:.S=.lst),-gstabs 
+ASFLAGS = -Wa,-adhlns=$(<:.S=.lst),-gstabs
 
 
 
@@ -123,7 +124,7 @@ LDFLAGS += -lm
 AVRDUDE_WRITE_FLASH = -U flash:w:$(TARGET).hex lfuse:w:0xd2:m -U hfuse:w:0xdb:m -U efuse:w:0xff:m
 #AVRDUDE_WRITE_EEPROM = -U eeprom:w:$(TARGET).eep
 
-#AVRDUDE_FLAGS = -p $(MCU) -P $(AVRDUDE_PORT) -c $(AVRDUDE_PROGRAMMER) 
+#AVRDUDE_FLAGS = -p $(MCU) -P $(AVRDUDE_PORT) -c $(AVRDUDE_PROGRAMMER)
 AVRDUDE_FLAGS = -p $(MCU) -c $(AVRDUDE_PROGRAMMER)
 # Uncomment the following if you are using arduino (or any other programmer
 # that needs custom baud rate) as a programmer.
@@ -139,7 +140,7 @@ AVRDUDE_FLAGS = -p $(MCU) -c $(AVRDUDE_PROGRAMMER)
 #AVRDUDE_FLAGS += -V
 
 # Increase verbosity level.  Please use this when submitting bug
-# reports about avrdude. See <http://savannah.nongnu.org/projects/avrdude> 
+# reports about avrdude. See <http://savannah.nongnu.org/projects/avrdude>
 # to submit bug reports.
 AVRDUDE_FLAGS += -v -v
 
@@ -181,7 +182,7 @@ ELFSIZE = $(SIZE) -A $(TARGET).elf
 MSG_ERRORS_NONE = Errors: none
 MSG_BEGIN = -------- begin --------
 MSG_END = --------  end  --------
-MSG_SIZE_BEFORE = Size before: 
+MSG_SIZE_BEFORE = Size before:
 MSG_SIZE_AFTER = Size after:
 MSG_COFF = Converting to AVR COFF:
 MSG_EXTENDED_COFF = Converting to AVR Extended COFF:
@@ -198,7 +199,7 @@ MSG_CLEANING = Cleaning project:
 
 
 # Define all object files.
-OBJ = $(SRC:.c=.o) $(ASRC:.S=.o) 
+OBJ = $(SRC:.c=.o) $(ASRC:.S=.o)
 
 # Define all listing files.
 LST = $(ASRC:.S=.lst) $(SRC:.c=.lst)
@@ -242,7 +243,7 @@ sizeafter:
 
 
 # Display compiler version information.
-gccversion : 
+gccversion :
 	@$(CC) --version
 
 
@@ -254,7 +255,7 @@ COFFCONVERT=$(OBJCOPY) --debugging \
 	--change-section-address .data-0x800000 \
 	--change-section-address .bss-0x800000 \
 	--change-section-address .noinit-0x800000 \
-	--change-section-address .eeprom-0x810000 
+	--change-section-address .eeprom-0x810000
 
 
 coff: $(TARGET).elf
@@ -271,7 +272,7 @@ extcoff: $(TARGET).elf
 
 
 
-# Program the device.  
+# Program the device.
 install: $(TARGET).hex $(TARGET).eep
 	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_WRITE_FLASH) $(AVRDUDE_WRITE_EEPROM)
 
@@ -359,8 +360,8 @@ clean_list :
 	$(REMOVE) $(SRC:.c=.d)
 	$(REMOVE) *~
 
-# Automatically generate C source code dependencies. 
-# (Code originally taken from the GNU make user manual and modified 
+# Automatically generate C source code dependencies.
+# (Code originally taken from the GNU make user manual and modified
 # (See README.txt Credits).)
 #
 # Note that this will work with sh (bash) and sed that is shipped with WinAVR

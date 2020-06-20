@@ -21,6 +21,46 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "ps2kbd.h"
 #include <util/delay.h>
 #include <avr/wdt.h>
+#include <stdio.h>
+
+#include "rs232.h"
+
+//must have interrupt 0
+#define PS2CLOCK PD2
+#define PS2DATA PD3
+#define PS2PORT PORTD
+#define PS2DDR  DDRD
+#define PS2PIN  PIND
+
+#define STATUSLEDDDR DDRB
+#define STATUSLEDPORT PORTB
+#define STATUSLED PINB0
+
+const uint8_t ps2_to_ascii[] = // Scancode > Ascii table.
+{
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '`', 0, // 00-0F
+  0, 0, 0, 0, 0, 'q', '1', 0, 0, 0, 'z', 's', 'a', 'w', '2', 0, //10-1F
+  0, 'c', 'x', 'd', 'e', '4', '3', 0, 0, ' ', 'v', 'f', 't', 'r', '5', 0, //20-2F
+  0, 'n', 'b', 'h', 'g', 'y', '6', 0, 0, 0, 'm', 'j', 'u', '7', '8', 0, //30-3F
+  0, ',', 'k', 'i', 'o', '0', '9', 0, 0, '.', '/', 'l', ';', 'p', '-', 0, //40-4F
+  0, 0, '\'', 0, '[', '=', 0, 0, 0, 0, 0, ']', 0, '\\', 0, 0, //50-5F
+  0, 0, 0, 0, 0, 0, 0, 0, 0, '1', 0, '4', '7', 0, 0, 0, //60-6F
+  '0', '.', '2', '5', '6', '8', 0, 0, 0, '+', '3', '-', '*', '9', 0, 0, //70-7F
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 //80-8F
+};
+
+const uint8_t ps2_to_ascii_shifted[] =
+{
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '~', 0, // 00-0F
+  0, 0, 0, 0, 0, 'Q', '!', 0, 0, 0, 'Z', 'S', 'A', 'W', '@', 0, //10-1F
+  0, 'C', 'X', 'D', 'E', '$', '#', 0, 0, ' ', 'V', 'F', 'T', 'R', '%', 0, //20-2F
+  0, 'N', 'B', 'H', 'G', 'Y', '^', 0, 0, 0, 'M', 'J', 'U', '&', '*', 0, //30-3F
+  0, '<', 'K', 'I', 'O', ')', '(', 0, 0, '>', '?', 'L', ':', 'P', '_', 0, //40-4F
+  0, 0, '"', 0, '{', '+', 0, 0, 0, 0, 0, '}', 0, '|', 0, 0, //50-5F
+  0, 0, 0, 0, 0, 0, 0, 0, 0, '1', 0, '4', '7', 0, 0, 0, //60-6F
+  '0', '.', '2', '5', '6', '8', 0, 0, 0, '+', '3', '-', '*', '9', 0, 0, //70-7F
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 //80-8F
+};
 
 // Volatile, declared here because they're used in and out of the ISR
 volatile uint8_t rcv_byte = 0;
@@ -50,10 +90,10 @@ void framing_error(uint8_t num)
 {
   // Deal with PS/2 Protocol Framing errors. delay for the rest of the packet and clear interrupts generated during the delay.
   framing_errors++;
-  GIMSK &= ~(1 << INT0);
+  GICR &= ~(1 << INT0);
   _delay_ms(8);
   GIFR |= (1 << INTF0); // Clear Interrupt flag
-  GIMSK |= (1 << INT0);
+  GICR |= (1 << INT0);
 }
 
 void sendps2(uint8_t data)
@@ -68,18 +108,18 @@ void sendps2(uint8_t data)
   {
     send_byte = data;
     send_parity = calc_parity(send_byte);
-    GIMSK &= ~(1 << INT0); // Disable interrupt for CLK
-    PORTB &= ~(1 << PB5); // Set data Low
-    PORTB &= ~(1 << PB6); // Set Clock low
-    DDRB |= (1 << DDB6); // CLK low
+    GICR &= ~(1 << INT0); // Disable interrupt for CLK
+    PS2PORT &= ~(1 << PS2DATA); // Set data Low
+    PS2PORT &= ~(1 << PS2CLOCK); // Set Clock low
+    PS2DDR |= (1 << PS2CLOCK); // CLK low
     _delay_us(150);
-    DDRB |= (1 << DDB5); // DATA low
-    DDRB &= ~(1 << DDB6); // Release clock and set it as an input again, clear interrupt flags and re-enable the interrupts
+    PS2DDR |= (1 << PS2DATA); // DATA low
+    PS2DDR &= ~(1 << PS2CLOCK); // Release clock and set it as an input again, clear interrupt flags and re-enable the interrupts
     GIFR |= (1 << INTF0);
-    GIMSK |= (1 << INT0);
+    GICR |= (1 << INT0);
     sr = TX;
     while (sr == TX) {} // All the work for sending the data is handled inside the interrupt
-    DDRB &= ~(1 << DDB6 | 1 << DDB5); // Clock and Data set back to input
+    PS2DDR &= ~(1 << PS2CLOCK | 1 << PS2DATA); // Clock and Data set back to input
     buffer = EMPTY;
     while (buffer == EMPTY) {} // Wait for ACK packet before proceeding
     buffer = EMPTY;
@@ -107,8 +147,8 @@ void resetKbd(void) {
 }
 
 void resetHost(void) {
-    DDRB |= (1 << DDB4);
-    PORTB &= ~(1 << PB4);
+    PS2DDR |= (1 << PS2CLOCK);
+    PS2PORT &= ~(1 << PS2CLOCK);
     for (;;) {} // Reset KBC using WDT
 }
 
@@ -124,27 +164,27 @@ ISR (INT0_vect)
     if (send_bitcount >=0 && send_bitcount <=7) // Data Byte
     {
       if ((send_byte >> send_bitcount) & 1) {
-        DDRB &= ~(1 << DDB5); // DATA High
+        PS2DDR &= ~(1 << PS2DATA); // DATA High
       }
       else
       {
-        DDRB |= (1 << DDB5); // DATA Low
+        PS2DDR |= (1 << PS2DATA); // DATA Low
       }
     }
     else if (send_bitcount == 8) // Parity Bit
-    {   
+    {
       if (send_parity)
       {
-        DDRB |= (1 << DDB5); // DATA Low
+        PS2DDR |= (1 << PS2DATA); // DATA Low
       }
       else
       {
-        DDRB &= ~(1 << DDB5); // DATA High
+        PS2DDR &= ~(1 << PS2DATA); // DATA High
       }
     }
     else if (send_bitcount == 9) // Stop Bit
     {
-      DDRB &= ~(1 << DDB5); // DATA High
+      PS2DDR &= ~(1 << PS2DATA); // DATA High
     }
     if (send_bitcount < 10)
     {
@@ -160,7 +200,7 @@ ISR (INT0_vect)
   else { // Receive from device
   uint8_t result = 0;
 
-    if (PINB & (1 << PB5))
+    if (PS2PIN & (1 << PS2DATA))
     {
       result = 1;
     }
@@ -215,16 +255,19 @@ int main (void) {
   volatile uint8_t kb_leds = 0;
   volatile char ret_char = 0;
 
-  MCUCR |= (1 << ISC01 | 1 << PUD); // Interrupt on Falling Edge, force disable pullups
-  DDRB &= ~(1 << DDB6 | 1 << DDB5); // PINB6 = PS/2 Clock, PINB5 = PS/2 Data both set as input
-  DDRB |= (1 << DDB3);
-  DDRA |= (0xFF);
-  GIMSK |= (1 << INT0); // Enable Interrupt on PINB2 aka INT0
+  MCUCR |= (1 << ISC01); // Interrupt on Falling Edge, force disable pullups
+  SFIOR |= (1 << PUD);
+  PS2DDR &= ~(1 << PS2CLOCK | 1 << PS2DATA); // PINB6 = PS/2 Clock, PINB5 = PS/2 Data both set as input
+  STATUSLEDDDR |= (1 << STATUSLED);
+  GICR |= (1 << INT0); // Enable Interrupt on PINB2 aka INT0
+
+  uart_init();
+  printf("Hello\r\n");
 
   wdt_enable(WDTO_500MS);
   sei();
   resetKbd();
-  
+
   while (1) {
     wdt_reset();
     if ((kb_register & (1 << KB_L_CTRL)) && (kb_register & (1 << KB_L_ALT)) && (kb_register & (1 << KB_R_ALT))) {
@@ -235,9 +278,9 @@ int main (void) {
     }
     if ((buffer == FULL) && ((mode == KEY) || (mode == EXTKEY)))
     {
-      GIMSK &= ~(1 << INT0); // Disable interrupt for CLK
-      PORTB &= ~(1 << PB6); // Bring Clock low, inhibit keyboard until done processing event
-      DDRB |= (1 << DDB6); // CLK now an outout
+      GICR &= ~(1 << INT0); // Disable interrupt for CLK
+      PS2PORT &= ~(1 << PS2CLOCK); // Bring Clock low, inhibit keyboard until done processing event
+      PS2DDR |= (1 << PS2CLOCK); // CLK now an outout
       if (mode == EXTKEY) {
         if (kb_register & (1 << KB_KUP)) //This is a keyup event
         {
@@ -379,19 +422,18 @@ int main (void) {
           }
           if (ret_char)
           {
-            PORTA = ret_char;
-            PORTB |= 1 << PB3;
+            STATUSLEDPORT |= 1 << STATUSLED;
             _delay_us(10);
-            PORTB &= ~(1 << PB3);
+            STATUSLEDPORT &= ~(1 << STATUSLED);
+            printf("Char %x\r\n", ret_char);
             ret_char = 0;
-            PORTA = 0;
           }
         }
       }
       buffer = EMPTY;
-      DDRB &= ~(1 << DDB6);
+      PS2DDR &= ~(1 << PS2CLOCK);
       GIFR |= (1 << INTF0);
-      GIMSK |= (1 << INT0);
+      GICR |= (1 << INT0);
     }
   }
 }
